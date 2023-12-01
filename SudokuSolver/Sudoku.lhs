@@ -1,5 +1,9 @@
 Original Haskell code to be ported to python(attached)
 
+How to run?
+ghci Sudoku.lhs
+and invoke function with required inputs
+
 
 A Simple Sudoku Solver
 27th September, 2007
