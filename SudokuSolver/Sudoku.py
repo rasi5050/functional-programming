@@ -1,16 +1,19 @@
-#Ported code from Haskell(attached) to Python
 """
-A simple Sudoku Solver; 
-ported from haskell(Bird, chap 05) to python
-11/23-27/2023
-Rasi
+Title: A simple Sudoku Solver; Ported from Haskell(Bird, chapter 05) to Python.
+Description: Implementation of Sudoku solver in functional programming paradigm, 
+            algorithms namely solve0, solve1, solve2 as in the order of refinement of problem specification
+Author: Rasi (rasi01@syr.edu)
+Date: 11/23-27/2023 + 12/3/2023
+Version: 2.0
 """
 
+
+
 """
-there are three algorithms here,
-solve1: #Main idea: brute force all potential matrix choices, filter out valid matrix from those (naive)
-solve1WithPruning: #Main idea: prune matrices to discard invalid choices and filter valid matrices (intermediate)
-solve2: #Main idea: prune matrices, single cell expansion to discard invalid choices (advanced)
+3 iteration algorithm is used to solve, each as an improvement of problem specification.
+solve0: #Main idea: brute force all potential matrix choices, filter out valid matrix from those (naive algorithm)
+solve1: #Main idea: repeatedly prune matrices to discard invalid choices and filter valid matrices (intermediate algorithm)
+solve2: #Main idea: prune matrices, single cell expansion to discard invalid choices (advanced algorithm)
 
 to run algorithm,
 sample input format is as below
@@ -25,7 +28,7 @@ validSudoku1 = [
     , "287419635"
     , "345286179"
     ]
-algorithm should be executed as solve1(validSudoku1), solve1WithPruning(validSudoku1), solve1(validSudoku1)
+algorithm should be executed as solve0(validSudoku1), solve1(validSudoku1), solve2(validSudoku1)
 
 Few testcases will be automatically run executing the program
 
@@ -53,7 +56,7 @@ brew install python@3.11
 > How to run code?
 python3 -i Sudoku.py
 """
-from typing import TypeVar, List
+from typing import TypeVar, List, Callable
 
 # 0. Basic data types
 
@@ -123,19 +126,6 @@ def rows(mat: Matrix) -> List[Row]:
 def cols(mat: Matrix) -> List[Row]:
     return list(map(list, zip(*mat)))
 
-"""not currently used
-#alternate implementation of "group"
-# def group(lst: List[T]) -> List[List[T]]:
-    return [lst[i:i + 3] for i in range(0, len(lst), 3)]
-
-def ungroup(groups: List[List[T]]) -> List[T]:
-    return [item for group in groups for item in group]
-
-#alternate implementation of "ungroup"
-# def ungroup(lst: List[List[T]]) -> List[T]:
-#     return [item for sublist in lst for item in sublist]
-"""
-
 #return the 3x3 grids, returned as a flattened list so that nodups can check duplicates
 def boxs(mat: Matrix) -> List[Row]:
         #group into 3, used to identfy 3x3 grid
@@ -156,19 +146,119 @@ def boxs(mat: Matrix) -> List[Row]:
 def valid(g: Grid) -> bool:
     return all(map(nodups, rows(g))) and all(map(nodups, cols(g))) and all(map(nodups, boxs(g)))
 
+#expand to possible matrix choices using choices
+def completions(grid: Grid)->List[Grid]:
+    return expand(choices(grid))
 
 #check valid for possible matrix choices using filter
-#ie. filter out only valid matrices from the list of all potential solution matrices
-def solve1(grid: Grid)->List[Grid]:
-    listMat = list(filter(valid, expand(choices(grid))))
+#ie. filter out only valid matrices from the list of all potential choices of matrices
+def solve0(grid: Grid)->List[Grid]:
+    listMat = list(filter(valid, completions(grid)))
     return [[''.join(row) for row in mat] for mat in listMat]
 
 
+# 2. Pruning
 
+#identify duplicate choices
+def remove(c1: Choices, c2: Choices)->Choices:
+    return ''.join([c for c in c2 if c not in c1])
+
+#prune by row
+def pruneRow(row: Row[Choices])->Row[Choices]:
+    ones = [ choice for choice in row if len(choice)==1]
+    return [remove(ones, choice) if len(choice)>1 else choice for choice in row]
+
+#prune by matrix to discard invalid choices
+def prune(mat: Matrix[Choices])->Matrix[Choices]:
+    def pruneBy(f, mat1): return f(list(map(pruneRow, f(mat1))))
+    prunedByRows = pruneBy(rows, mat)
+    prunedByCols = pruneBy(cols, prunedByRows)
+    prunedByBoxs = pruneBy(boxs, prunedByCols)
+    return prunedByBoxs
+
+#apply a function repeatedly until no change is detected. this is used to applying pruning repeatedly, 
+#until prune doesnt make a difference to the matrix
+def many(f: Callable[[Matrix[Choices]], Matrix[Choices]], mat: Matrix[Choices])->Matrix[Choices]:
+    return f(mat) if mat==f(mat) else many(f, f(mat))
+
+#solve with many pruning algorithm, ie choices are repeatedly pruned until pruning doest have any to prune
+def solve1(grid: Grid)->List[Grid]:
+    listMat = list(filter(valid, expand(many(prune, choices(grid)))))
+    return [[''.join(row) for row in mat] for mat in listMat]
+
+# 3. Single-cell expansion
+
+# concat entire matrix as a single list to identify smallest choice length
+def concat(rows: Matrix[Choices])->Row[Choices]:
+        if not rows: return []
+        return rows[0] + concat(rows[1:])
+
+#find length of choices in concat matrix
+def counts(rows: Matrix[Choices])->List[int]:
+    return [count for count in list(map(len, concat(rows))) if count!=1]
+
+#differnt approach to expand the matrix, earlier all the matrix was exapnded, here the expansion starts from matrix with smallest choice length
+def expand1(rows: Matrix[Choices])->List[Matrix[Choices]]:
+    def n(rows): return min(counts(rows))
+
+    #break the row with smallest choice length as (row[:c], row[c], row[c+1:])
+    def breakRow(row, c=0):
+        if c==len(row): return None
+        if len(row[c]) == n(rows): return (row[:c], row[c], row[c+1:])
+        return breakRow(row, c+1)
+    
+    #break the rows with smallest row with smallest choice length ato obtain (rows1, (row1, cs, row2), rows2)
+    def breakRows(rows, c=0):
+        if c==len(rows): return None
+        if breakRow(rows[c]): return (rows[:c], breakRow(rows[c]), rows[c+1:])
+        return breakRows(rows, c+1)
+    
+    (rows1, (row1, cs, row2), rows2) = breakRows(rows)
+
+    return [rows1 + [row1 + [c] + row2] + rows2 for c in cs]
+
+
+# 4. Final algorithm
+
+#check duplicates
+def ok(row: Row[Choices])->bool:
+    return nodups([cs for cs in row if len(cs)==1])
+
+#check duplicates on rows, cols and boxs
+def safe(cm: Matrix[Choices])->bool:
+    return all(map(ok, rows(cm)) and map(ok, cols(cm)) and map(ok, boxs(cm)))
+
+#check if a cell has only single charecter
+def single(cs: Choices)->bool:
+    return True if len(cs)==1 else False
+
+#check if the matrix has only single charecters in all cells
+def complete(mat: Matrix[Choices])->bool:
+    return all([single(cs) for row in mat for cs in row])
+
+#concatinate the rows of matrix 
+def concat1(mats: Matrix[Choices])->List[Grid]:
+        if not mats: return [[]]
+        return mats[0] + concat(mats[1:])
+
+#search for valid matrix from the possibilities
+def search(cm: Matrix[Choices])->List[Grid]:
+    pm=prune
+    if not safe(pm(cm)): return []
+    #in haskell code; its to join cells in a row to a string
+    if complete(pm(cm)): return pm(cm)
+    #skipped concat here, for output consistency
+    return [r for r in concat1(list(map(search, expand1(pm(cm))))) if r]
+
+#solve2 final algorithm
+def solve2(grid: Grid)->List[Grid]:
+    out = list(search(choices(grid)))
+    listMat = [out[i:i+9] for i in range(0,len(out),9)]  
+    return [[''.join(row) for row in mat] for mat in listMat]
 
 #sample testcases
 count=1
-def solutionViewer(sudoku, sudoku_name="", algo=solve1):
+def solutionViewer(sudoku, sudoku_name="", algo=solve0):
     global count
     if not sudoku_name: sudoku_name="sample"+str(count)
     print("----------------------------------------------------------")
@@ -253,120 +343,60 @@ haveMultipleSolutions = [
     , "345286179"
     ]
 
+# -----------------text book examples --------------------------------
+example51 = [
+    "004005700",
+     "000009400",
+     "360000008",
+     "720060000",
+     "000402000",
+     "000080093",
+     "400000056",
+     "005300000",
+     "006100900"]
+
+
+example51a = [
+     "000005700",
+     "000009400",
+     "300000008",
+     "720060000",
+     "000400000",
+     "000080093",
+     "400000006",
+     "000300000",
+     "006100000"]
+
+exampleHard = [
+    "083090750", 
+     "500000002",
+     "000700006",
+     "300100870",
+     "000000600",
+     "001020000",
+     "000000005",
+     "800200130",
+     "090004000"]
+# ----------------------------------------------------------------
+
 testCases = [(validSudoku1, "validSudoku1")
 ,(oneOffValidSudoku1, "oneOffValidSudoku1")
 ,(multipleOffValidSudoku1, "multipleOffValidSudoku1")
 ,(validSudoku2, "validSudoku2")]
 
+print("Solve Using solve0")
+print("Note: testCase: multipleOffValidSudoku1 will take long time to run as using \"solve0\"")
+for test_sudoku, test_name in testCases:
+    solutionViewer(test_sudoku, test_name, solve0)    
+
+
+
 print("Solve Using solve1")
-print("Note: testCase: multipleOffValidSudoku1 will take long time to run as its naive algorithm")
 for test_sudoku, test_name in testCases:
-    solutionViewer(test_sudoku, test_name)    
-
-
-# ---------------------------------------------------------
-# solve2 starts from here
-
-# 2. Pruning
-#identify duplicate choices
-def remove(c1: Choices, c2: Choices)->Choices:
-    return ''.join([c for c in c2 if c not in c1])
-
-#prune by row
-def pruneRow(row: Row[Choices])->Row[Choices]:
-    ones = [ choice for choice in row if len(choice)==1]
-    return [remove(ones, choice) if len(choice)>1 else choice for choice in row]
-
-#prune by matrix to discard invalid choices
-def prune(mat: Matrix[Choices])->Matrix[Choices]:
-    def pruneBy(f, mat1): return f(list(map(pruneRow, f(mat1))))
-    prunedByRows = pruneBy(rows, mat)
-    prunedByCols = pruneBy(cols, prunedByRows)
-    prunedByBoxs = pruneBy(boxs, prunedByCols)
-    return prunedByBoxs
-#solve with pruning algorithm
-def solve1WithPruning(grid: Grid)->List[Grid]:
-    listMat = list(filter(valid, expand(prune(choices(grid)))))
-    return [[''.join(row) for row in mat] for mat in listMat]
-
-print("Solve Using solve1WithPruning")
-for test_sudoku, test_name in testCases:
-    solutionViewer(test_sudoku, test_name, solve1WithPruning)    
-# ------------------------end of prune------------------------
-
-
-# --------------------------------------------------------
-# 3. Single-cell expansion
-
-# concat entire matrix as a single list to identify smallest choice length
-def concat(rows: Matrix[Choices])->Row[Choices]:
-        if not rows: return []
-        return rows[0] + concat(rows[1:])
-
-#find length of choices in concat matrix
-def counts(rows: Matrix[Choices])->List[int]:
-    return [count for count in list(map(len, concat(rows))) if count!=1]
-
-#differnt approach to expand the matrix, earlier all the matrix was exapnded, here the expansion starts from matrix with smallest choice length
-def expand1(rows: Matrix[Choices])->List[Matrix[Choices]]:
-    def n(rows): return min(counts(rows))
-
-    #break the row with smallest choice length as (row[:c], row[c], row[c+1:])
-    def breakRow(row, c=0):
-        if c==len(row): return None
-        if len(row[c]) == n(rows): return (row[:c], row[c], row[c+1:])
-        return breakRow(row, c+1)
-    
-    #break the rows with smallest row with smallest choice length ato obtain (rows1, (row1, cs, row2), rows2)
-    def breakRows(rows, c=0):
-        if c==len(rows): return None
-        if breakRow(rows[c]): return (rows[:c], breakRow(rows[c]), rows[c+1:])
-        return breakRows(rows, c+1)
-    
-    (rows1, (row1, cs, row2), rows2) = breakRows(rows)
-
-    return [rows1 + [row1 + [c] + row2] + rows2 for c in cs]
-
-
-# 4. Final algorithm
-
-#check duplicates
-def ok(row: Row[Choices])->bool:
-    return nodups([cs for cs in row if len(cs)==1])
-
-#check duplicates on rows, cols and boxs
-def safe(cm: Matrix[Choices])->bool:
-    return all(map(ok, rows(cm)) and map(ok, cols(cm)) and map(ok, boxs(cm)))
-
-#check if a cell has only single charecter
-def single(cs: Choices)->bool:
-    return True if len(cs)==1 else False
-
-#check if the matrix has only single charecters in all cells
-def complete(mat: Matrix[Choices])->bool:
-    return all([single(cs) for row in mat for cs in row])
-
-#concatinate the rows of matrix 
-def concat1(mats: Matrix[Choices])->List[Grid]:
-        if not mats: return [[]]
-        return mats[0] + concat(mats[1:])
-
-#search for valid matrix from the possibilities
-def search(cm: Matrix[Choices])->List[Grid]:
-    pm=prune
-    if not safe(pm(cm)): return []
-    #in haskell code; its to join cells in a row to a string
-    if complete(pm(cm)): return pm(cm)
-    #skipped concat here, for output consistency
-    return [r for r in concat1(list(map(search, expand1(pm(cm))))) if r]
-
-#solve2 final algorithm
-def solve2(grid: Grid)->List[Grid]:
-    out = list(search(choices(grid)))
-    listMat = [out[i:i+9] for i in range(0,len(out),9)]  
-    return [[''.join(row) for row in mat] for mat in listMat]
+    solutionViewer(test_sudoku, test_name, solve1)    
 
 testCases += [(haveMultipleSolutions, "haveMultipleSolutions")]
+
 
 print("Solve Using solve2")
 for test_sudoku, test_name in testCases:
