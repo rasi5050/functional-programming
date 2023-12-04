@@ -23,6 +23,8 @@ Functional programming tasks associated with being a Teaching Assistant for "Str
   
   eg) the input oneOffValidSudoku1 is already added and can be invoked as 
   
+  > solve0(oneOffValidSudoku1)
+  
   > solve1(oneOffValidSudoku1)
   
   > solve2(oneOffValidSudoku1)
@@ -37,9 +39,9 @@ Functional programming tasks associated with being a Teaching Assistant for "Str
   
   eg) the input oneOffValidSudoku1 is already added and can be invoked as 
   
-  > solve1(oneOffValidSudoku1)
+  > solve0(oneOffValidSudoku1)
   
-  > solve1WithPruning(oneOffValidSudoku1)
+  > solve1(oneOffValidSudoku1)
   
   > solve2(oneOffValidSudoku1)
 
